@@ -8,17 +8,19 @@ import { sendConnectRequest, checkExistingConnection } from "@/lib/connections";
 import { moderateMessage, incrementViolationCount, getWarningMessage } from "@/lib/moderation";
 import { enforceBanThreshold, getRemainingWarnings } from "@/lib/ban";
 import { blockUser } from "@/lib/block";
+import { getDisplayName } from "@/lib/userProfile";
 import { useBlockedStatus } from "@/hooks/useBlockedStatus";
 import type { MessageDoc } from "@/types";
 import Button from "@/components/ui/Button";
 import ChatBubble from "@/components/chat/ChatBubble";
 import ConnectRequestBanner from "@/components/chat/ConnectRequestBanner";
 import ReportModal from "@/components/chat/ReportModal";
+import OnboardingScreen from "@/components/onboarding/OnboardingScreen";
 
 type ChatState = "idle" | "searching" | "matched" | "ended";
 
 export default function ChatPage() {
-    const { uid, loading: authLoading } = useAuth();
+    const { uid, loading: authLoading, hasProfile, setDisplayName } = useAuth();
     const { isBlocked, violationCount, loading: banLoading, refresh: refreshBanStatus } = useBlockedStatus();
 
     const [chatState, setChatState] = useState<ChatState>("idle");
@@ -36,6 +38,7 @@ export default function ChatPage() {
     const [reportModalOpen, setReportModalOpen] = useState(false);
     const [reportMessageId, setReportMessageId] = useState<string | null>(null);
     const [userBlockedPartner, setUserBlockedPartner] = useState(false);
+    const [partnerName, setPartnerName] = useState<string>("Anonymous");
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -66,6 +69,8 @@ export default function ChatPage() {
     useEffect(() => {
         if (!uid || !partnerId) return;
         checkExistingConnection(uid, partnerId).then(setIsConnected).catch(() => { });
+        // Fetch partner's display name
+        getDisplayName(partnerId).then(setPartnerName).catch(() => setPartnerName("Anonymous"));
     }, [uid, partnerId]);
 
     const handleStartChat = useCallback(async () => {
@@ -250,6 +255,15 @@ export default function ChatPage() {
         );
     }
 
+    // ─── Onboarding gate ─────────────────────────────────────────────
+    if (uid && !hasProfile) {
+        return (
+            <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+                <OnboardingScreen userId={uid} onComplete={setDisplayName} />
+            </div>
+        );
+    }
+
     return (
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
             <div className="mx-auto max-w-3xl">
@@ -349,11 +363,11 @@ export default function ChatPage() {
                         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
                             <div className="flex items-center gap-3">
                                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-accent-400 text-sm font-bold text-white">
-                                    A
+                                    {partnerName.charAt(0).toUpperCase()}
                                 </div>
                                 <div>
                                     <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                                        Anonymous User
+                                        {isConnected ? partnerName : "Anonymous User"}
                                     </p>
                                     <p className="text-xs text-green-500">online</p>
                                 </div>
