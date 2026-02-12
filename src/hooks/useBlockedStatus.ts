@@ -9,7 +9,7 @@ import { checkBanStatus, type BanStatus } from "@/lib/ban";
  * Re-checks on demand via `refresh()`.
  */
 export function useBlockedStatus() {
-    const { uid } = useAuth();
+    const { uid, loading: authLoading } = useAuth();
     const [status, setStatus] = useState<BanStatus>({
         isBlocked: false,
         violationCount: 0,
@@ -17,7 +17,11 @@ export function useBlockedStatus() {
     const [loading, setLoading] = useState(true);
 
     const refresh = useCallback(async () => {
-        if (!uid) return;
+        if (!uid) {
+            // If no uid yet (auth still loading), don't block — set loading false
+            setLoading(false);
+            return;
+        }
         try {
             const result = await checkBanStatus(uid);
             setStatus(result);
@@ -29,8 +33,10 @@ export function useBlockedStatus() {
     }, [uid]);
 
     useEffect(() => {
+        // If auth is still loading, keep our loading true but don't block forever
+        if (authLoading) return;
         refresh();
-    }, [refresh]);
+    }, [refresh, authLoading]);
 
     return { ...status, loading, refresh };
 }
