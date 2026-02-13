@@ -15,7 +15,7 @@ import Button from "@/components/ui/Button";
 import ChatBubble from "@/components/chat/ChatBubble";
 import ConnectRequestBanner from "@/components/chat/ConnectRequestBanner";
 import ReportModal from "@/components/chat/ReportModal";
-import OnboardingScreen from "@/components/onboarding/OnboardingScreen";
+import OnboardingModal from "@/components/onboarding/OnboardingModal";
 
 type ChatState = "idle" | "searching" | "matched" | "ended";
 
@@ -39,6 +39,7 @@ export default function ChatPage() {
     const [reportMessageId, setReportMessageId] = useState<string | null>(null);
     const [userBlockedPartner, setUserBlockedPartner] = useState(false);
     const [partnerName, setPartnerName] = useState<string>("Anonymous");
+    const [onboardingOpen, setOnboardingOpen] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -73,7 +74,7 @@ export default function ChatPage() {
         getDisplayName(partnerId).then(setPartnerName).catch(() => setPartnerName("Anonymous"));
     }, [uid, partnerId]);
 
-    const handleStartChat = useCallback(async () => {
+    const startMatchmaking = useCallback(async () => {
         if (!uid) return;
         setChatState("searching");
         setMessages([]);
@@ -112,6 +113,22 @@ export default function ChatPage() {
             setChatState("idle");
         }
     }, [uid, recentMatches]);
+
+    const handleStartChat = useCallback(() => {
+        if (!uid) return;
+        if (!hasProfile) {
+            setOnboardingOpen(true);
+            return;
+        }
+        startMatchmaking();
+    }, [uid, hasProfile, startMatchmaking]);
+
+    const handleOnboardingComplete = (name: string) => {
+        setDisplayName(name);
+        setOnboardingOpen(false);
+        // Start chat immediately after profile creation
+        startMatchmaking();
+    };
 
     const handleCancelSearch = useCallback(async () => {
         // Clean up match listener
@@ -255,14 +272,7 @@ export default function ChatPage() {
         );
     }
 
-    // ─── Onboarding gate ─────────────────────────────────────────────
-    if (uid && !hasProfile) {
-        return (
-            <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-                <OnboardingScreen userId={uid} onComplete={setDisplayName} />
-            </div>
-        );
-    }
+
 
     return (
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
@@ -535,6 +545,16 @@ export default function ChatPage() {
                     reportedUserId={partnerId}
                     chatId={chatId}
                     messageId={reportMessageId}
+                />
+            )}
+
+            {/* Onboarding Modal */}
+            {uid && (
+                <OnboardingModal
+                    isOpen={onboardingOpen}
+                    onClose={() => setOnboardingOpen(false)}
+                    userId={uid}
+                    onComplete={handleOnboardingComplete}
                 />
             )}
         </div>
