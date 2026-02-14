@@ -138,12 +138,6 @@ async function findMatch(
         // Skip self
         if (data.userId === userId) continue;
 
-        // Skip recently matched users
-        if (recentMatches.includes(data.userId)) continue;
-
-        // Skip if the other user also recently matched with us
-        if (data.recentMatches?.includes(userId)) continue;
-
         // Skip users we have blocked
         if (blockedUsers.includes(data.userId)) continue;
 

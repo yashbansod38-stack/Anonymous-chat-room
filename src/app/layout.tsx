@@ -4,6 +4,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import FriendChatSidebar from "@/components/chat/FriendChatSidebar";
+import PresenceManager from "@/components/PresenceManager";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -23,6 +24,7 @@ export default function RootLayout({
       <body className="flex min-h-screen flex-col">
         <ThemeProvider>
           <AuthProvider>
+            <PresenceManager />
             <Header />
             <main className="flex-1">{children}</main>
             <Footer />

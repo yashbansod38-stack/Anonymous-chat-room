@@ -1,23 +1,26 @@
-"use client";
-
 import { useState } from "react";
 import type { MessageDoc } from "@/types";
+import { Timestamp } from "firebase/firestore";
+import Avatar from "@/components/ui/Avatar";
 
 interface ChatBubbleProps {
     message: MessageDoc;
     isOwn: boolean;
+    partnerLastRead?: Timestamp | null;
     onReport?: (messageId: string) => void;
 }
 
-export default function ChatBubble({ message, isOwn, onReport }: ChatBubbleProps) {
+export default function ChatBubble({ message, isOwn, partnerLastRead, onReport }: ChatBubbleProps) {
     const [showMenu, setShowMenu] = useState(false);
 
-    const time = message.createdAt?.toDate
-        ? message.createdAt.toDate().toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-        })
-        : "";
+    const isSystem = message.senderId === "system";
+    const date = message.createdAt instanceof Timestamp ? message.createdAt.toDate() : new Date();
+
+    const isRead = isOwn && partnerLastRead && message.createdAt && (
+        partnerLastRead.toMillis() >= message.createdAt.toMillis()
+    );
+
+    const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
     const handleContextMenu = (e: React.MouseEvent) => {
         if (isOwn) return; // can't report own messages
@@ -26,31 +29,30 @@ export default function ChatBubble({ message, isOwn, onReport }: ChatBubbleProps
     };
 
     return (
-        <div
-            className={`group flex animate-fade-in ${isOwn ? "justify-end" : "justify-start"}`}
-        >
+        <div className={`flex w-full ${isOwn ? "justify-end" : "justify-start"} mb-4`}>
+            {!isOwn && !isSystem && (
+                <Avatar seed={message.senderId} size={32} className="mr-2 self-end mb-1" />
+            )}
             <div
-                className={`
-          relative max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed
-          ${isOwn
-                        ? "rounded-br-md bg-primary-600 text-white shadow-md shadow-primary-500/20"
-                        : "rounded-bl-md bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                    }
-        `}
+                className={`group relative max-w-[80%] rounded-2xl px-4 py-2 text-sm shadow-sm md:max-w-[70%] ${isOwn
+                    ? "bg-primary-600 text-white rounded-tr-sm"
+                    : "bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-100 rounded-tl-sm"
+                    }`}
                 onContextMenu={handleContextMenu}
             >
-                {/* Message content */}
-                <p className="break-words">{message.content}</p>
-
-                {/* Timestamp */}
-                <p
-                    className={`mt-1 text-[10px] ${isOwn
-                            ? "text-primary-200"
-                            : "text-gray-400 dark:text-gray-500"
-                        }`}
-                >
-                    {time}
-                </p>
+                <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${isOwn ? "text-primary-100" : "text-gray-400"}`}>
+                    <span>{time}</span>
+                    {isOwn && (
+                        <span>
+                            {isRead ? (
+                                <span className="font-bold text-blue-200" title="Seen">✓✓</span>
+                            ) : (
+                                <span className="opacity-70" title="Sent">✓</span>
+                            )}
+                        </span>
+                    )}
+                </div>
 
                 {/* Moderation badge */}
                 {message.moderationStatus === "rejected" && (

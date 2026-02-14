@@ -11,6 +11,10 @@ import {
 import {
     onAuthStateChanged,
     signInAnonymously,
+    signInWithEmailAndPassword,
+    signOut,
+    linkWithCredential,
+    EmailAuthProvider,
     type User,
 } from "firebase/auth";
 import { getFirebaseAuth } from "@/lib/firebase";
@@ -35,6 +39,12 @@ interface AuthContextType {
     setDisplayName: (name: string) => void;
     /** Re-check profile from Firestore */
     refreshProfile: () => Promise<void>;
+    /** Login with Email/Password */
+    login: (e: string, p: string) => Promise<void>;
+    /** Upgrade anonymous account to Email/Password */
+    upgradeAccount: (e: string, p: string) => Promise<void>;
+    /** Logout (will auto-sign in anonymously after) */
+    logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -47,6 +57,9 @@ const AuthContext = createContext<AuthContextType>({
     hasProfile: false,
     setDisplayName: () => { },
     refreshProfile: async () => { },
+    login: async () => { },
+    upgradeAccount: async () => { },
+    logout: async () => { },
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -88,6 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Listen for auth state changes
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            console.log("[AuthContext] Auth State Changed:", firebaseUser?.uid);
+
             if (firebaseUser) {
                 setUser(firebaseUser);
                 // Check if user has a profile
@@ -97,19 +112,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         setDisplayName(profile.displayName);
                         setHasProfile(true);
                         updateLastActive(firebaseUser.uid).catch(() => { });
+                    } else {
+                        setDisplayName(null);
+                        setHasProfile(false);
                     }
-                } catch {
-                    // Profile doesn't exist yet — that's fine
+                } catch (e) {
+                    console.error("[AuthContext] Failed to fetch profile:", e);
+                } finally {
+                    setLoading(false);
                 }
-                setLoading(false);
             } else {
                 // No user — sign in anonymously
+                console.log("[AuthContext] Signing in anonymously...");
                 try {
                     await signInAnonymously(auth);
                     // onAuthStateChanged will fire again with the new user
+                    // We DO NOT set loading(false) here, we wait for the next event
                 } catch (error) {
-                    console.error("Anonymous sign-in failed:", error);
-                    setLoading(false);
+                    console.error("[AuthContext] Anonymous sign-in failed:", error);
+                    setLoading(false); // Stop loading on error
                 }
             }
         });
@@ -122,6 +143,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setHasProfile(true);
     }, []);
 
+    const login = useCallback(async (email: string, pass: string) => {
+        const auth = getFirebaseAuth();
+        if (!auth) throw new Error("Firebase not initialized");
+        await signInWithEmailAndPassword(auth, email, pass);
+    }, []);
+
+    const upgradeAccount = useCallback(async (email: string, pass: string) => {
+        const auth = getFirebaseAuth();
+        if (!auth || !auth.currentUser) throw new Error("No user to upgrade");
+
+        try {
+            const credential = EmailAuthProvider.credential(email, pass);
+            await linkWithCredential(auth.currentUser, credential);
+        } catch (error: unknown) {
+            // If email already exists, we might want to just sign in?
+            // But linking fails if the credential exists. 
+            // For now, let the UI handle the error (e.g. "Email already in use, please login")
+            throw error;
+        }
+    }, []);
+
+    const logout = useCallback(async () => {
+        const auth = getFirebaseAuth();
+        if (!auth) return;
+        await signOut(auth);
+        // after signOut, onAuthStateChanged triggers with null, which triggers signInAnonymously
+        // So they become a new anonymous user.
+        setDisplayName(null);
+        setHasProfile(false);
+    }, []);
+
     const value: AuthContextType = {
         user,
         uid: user?.uid ?? null,
@@ -132,6 +184,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasProfile,
         setDisplayName: handleSetDisplayName,
         refreshProfile,
+        login,
+        upgradeAccount,
+        logout,
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

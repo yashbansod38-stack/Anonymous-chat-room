@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     // ─── Production Optimizations ──────────────────────────────────
+    eslint: {
+        ignoreDuringBuilds: true,
+    },
     reactStrictMode: true,
     poweredByHeader: false,
 

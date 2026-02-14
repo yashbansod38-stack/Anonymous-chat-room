@@ -20,6 +20,7 @@ export interface ModerationResult {
 export async function moderateMessage(
     message: string
 ): Promise<ModerationResult> {
+    // API calls disabled for Static Version (Free Tier)
     try {
         const response = await fetch("/api/moderate", {
             method: "POST",

@@ -5,6 +5,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
     variant?: "primary" | "secondary" | "ghost" | "danger";
     size?: "sm" | "md" | "lg";
     isLoading?: boolean;
+    fullWidth?: boolean;
 }
 
 const variantStyles = {
@@ -29,6 +30,7 @@ export default function Button({
     variant = "primary",
     size = "md",
     isLoading = false,
+    fullWidth = false,
     className = "",
     disabled,
     ...props
@@ -43,6 +45,7 @@ export default function Button({
         disabled:opacity-50 disabled:cursor-not-allowed
         ${variantStyles[variant]}
         ${sizeStyles[size]}
+        ${fullWidth ? "w-full" : ""}
         ${className}
       `}
             disabled={disabled || isLoading}

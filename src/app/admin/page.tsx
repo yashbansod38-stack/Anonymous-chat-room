@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import {
     fetchPlatformStats,
@@ -10,11 +11,14 @@ import {
     unbanUser,
     updateReportStatus,
     lookupUser,
+    deleteUserProfile,
+    getAllUsers, // Import getAllUsers
     type PlatformStats,
     type ReportWithId,
     type BannedUserInfo,
 } from "@/lib/admin";
 import type { UserDoc } from "@/types";
+import { Timestamp } from "firebase/firestore"; // Import Timestamp
 import Button from "@/components/ui/Button";
 
 // ─── Stats Card ────────────────────────────────────────────────────
@@ -50,15 +54,17 @@ function StatCard({
 // ─── Main Page ─────────────────────────────────────────────────────
 
 export default function AdminPage() {
-    const { uid, loading: authLoading } = useAuth();
+    const { uid, loading: authLoading, isAnonymous } = useAuth();
+
+    console.log("[AdminPage] Render:", { uid, authLoading, isAnonymous });
 
     const [stats, setStats] = useState<PlatformStats | null>(null);
     const [reports, setReports] = useState<ReportWithId[]>([]);
     const [bannedUsers, setBannedUsers] = useState<BannedUserInfo[]>([]);
+    const [users, setUsers] = useState<UserDoc[]>([]); // Add users state
+    const [activeUserCount, setActiveUserCount] = useState(0); // Add activeUserCount state
     const [loadingData, setLoadingData] = useState(true);
-    const [activeTab, setActiveTab] = useState<"reports" | "banned" | "lookup">(
-        "reports"
-    );
+    const [activeTab, setActiveTab] = useState<"reports" | "banned" | "lookup" | "users">("users"); // Update activeTab type and default
 
     // Ban user by ID
     const [banInput, setBanInput] = useState("");
@@ -70,19 +76,71 @@ export default function AdminPage() {
     const [lookupResult, setLookupResult] = useState<UserDoc | null>(null);
     const [lookupNotFound, setLookupNotFound] = useState(false);
 
+    const [error, setError] = useState<string | null>(null);
+
     const loadData = useCallback(async () => {
         setLoadingData(true);
+        setError(null);
         try {
-            const [s, r, b] = await Promise.all([
+            console.log("[Admin] Loading data...");
+
+            // Fetch each concurrently but handle errors individually via allSettled
+            const [statsResult, reportsResult, bannedResult, usersResult] = await Promise.allSettled([
                 fetchPlatformStats(),
                 fetchReports(),
                 fetchBannedUsers(),
+                getAllUsers(100),
             ]);
-            setStats(s);
-            setReports(r);
-            setBannedUsers(b);
-        } catch (error) {
-            console.error("[Admin] Failed to load data:", error);
+
+            // Stats
+            if (statsResult.status === "fulfilled") {
+                setStats(statsResult.value);
+            } else {
+                console.error("[Admin] Failed to load stats:", statsResult.reason);
+                setError((prev) => (prev ? `${prev}, Stats failed` : "Failed to load Stats"));
+            }
+
+            // Reports
+            if (reportsResult.status === "fulfilled") {
+                setReports(reportsResult.value);
+            } else {
+                console.error("[Admin] Failed to load reports:", reportsResult.reason);
+            }
+
+            // Banned
+            if (bannedResult.status === "fulfilled") {
+                setBannedUsers(bannedResult.value);
+            } else {
+                console.error("[Admin] Failed to load banned users:", bannedResult.reason);
+            }
+
+            // Users
+            if (usersResult.status === "fulfilled") {
+                const u = usersResult.value;
+                setUsers(u);
+
+                // Calculate active users
+                const twoMinsAgo = Date.now() - 2 * 60 * 1000;
+                const activeCount = u.filter((user) => {
+                    if (!user.lastActiveAt) return false;
+                    try {
+                        const lastActiveMillis = user.lastActiveAt instanceof Timestamp
+                            ? user.lastActiveAt.toMillis()
+                            : (user.lastActiveAt as any).seconds * 1000;
+                        return lastActiveMillis > twoMinsAgo;
+                    } catch (e) {
+                        return false;
+                    }
+                }).length;
+                setActiveUserCount(activeCount);
+            } else {
+                console.error("[Admin] Failed to load users:", usersResult.reason);
+                setError((prev) => (prev ? `${prev}, Users failed` : "Failed to load Users"));
+            }
+
+        } catch (error: any) {
+            console.error("[Admin] Critical load error:", error);
+            setError(error.message || "Unknown loading error");
         } finally {
             setLoadingData(false);
         }
@@ -98,7 +156,7 @@ export default function AdminPage() {
         setBanMessage(null);
         try {
             await manualBanUser(banInput.trim());
-            setBanMessage(`User ${banInput.trim().slice(0, 12)}… has been banned.`);
+            setBanMessage(`User ${banInput.trim().slice(0, 12)}... has been banned.`);
             setBanInput("");
             await loadData();
         } catch (error) {
@@ -111,7 +169,7 @@ export default function AdminPage() {
 
     const handleUnban = async (userId: string) => {
         const confirmed = window.confirm(
-            `Unban user ${userId.slice(0, 12)}…? This will reset their violation count.`
+            `Unban user ${userId.slice(0, 12)}...? This will reset their violation count.`
         );
         if (!confirmed) return;
         try {
@@ -153,6 +211,50 @@ export default function AdminPage() {
 
     // ─── Loading ───────────────────────────────────────────────────
 
+    // ─── Security Check ───────────────────────────────────────────────
+    const router = useRouter();
+
+    useEffect(() => {
+        if (!authLoading) {
+            // If not logged in or anonymous, send to login page
+            // We want to force a dedicated login for admin specific usage
+            if (!uid || isAnonymous) {
+                router.replace("/admin/login");
+            }
+        }
+    }, [uid, authLoading, isAnonymous, router]);
+
+    const ADMIN_UIDS = process.env.NEXT_PUBLIC_ADMIN_UIDS?.split(",") || [];
+    const isAdmin = uid && ADMIN_UIDS.includes(uid);
+
+    if (!authLoading && !isAdmin) {
+        return (
+            <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+                <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
+                    <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-800">
+                        <svg className="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                    </div>
+                    <h1 className="mb-2 text-2xl font-bold text-gray-900 dark:text-white">
+                        Access Denied
+                    </h1>
+                    <p className="mb-6 max-w-md text-sm text-gray-500 dark:text-gray-400">
+                        You do not have permission to view this dashboard.
+                        <br />
+                        To gain access, add your UID to <code>.env.local</code>.
+                    </p>
+                    <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-mono text-xs text-gray-600 dark:border-gray-700 dark:bg-surface-dark dark:text-gray-400">
+                        {uid || "Not Logged In"}
+                    </div>
+                    <Button variant="secondary" onClick={() => router.push("/admin/login")}>
+                        Back to Login
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
     if (authLoading || loadingData) {
         return (
             <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -160,7 +262,7 @@ export default function AdminPage() {
                     <div className="flex flex-col items-center gap-4">
                         <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600 dark:border-gray-700 dark:border-t-primary-400" />
                         <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Loading dashboard…
+                            Loading dashboard...
                         </p>
                     </div>
                 </div>
@@ -171,9 +273,10 @@ export default function AdminPage() {
     // ─── Render ────────────────────────────────────────────────────
 
     const TABS = [
+        { key: "users" as const, label: "All Users", count: activeUserCount },
         { key: "reports" as const, label: "Reports", count: stats?.pendingReports },
         { key: "banned" as const, label: "Banned Users", count: stats?.bannedUsers },
-        { key: "lookup" as const, label: "User Lookup" },
+        { key: "lookup" as const, label: "Lookup" },
     ];
 
     return (
@@ -188,9 +291,25 @@ export default function AdminPage() {
                 </p>
             </div>
 
+            {error && (
+                <div className="mb-6 rounded-lg bg-red-100 p-4 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                    <strong>Error:</strong> {error}
+                </div>
+            )}
+
             {/* Stats Grid */}
             {stats && (
                 <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <StatCard
+                        label="Active Users"
+                        value={activeUserCount}
+                        color="bg-purple-100 dark:bg-purple-950"
+                        icon={
+                            <svg className="h-6 w-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                        }
+                    />
                     <StatCard
                         label="Total Users"
                         value={stats.totalUsers}
@@ -254,6 +373,8 @@ export default function AdminPage() {
                 </div>
             )}
 
+
+
             {/* Tabs */}
             <div className="mb-6 flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-surface-darker">
                 {TABS.map((tab) => (
@@ -261,8 +382,8 @@ export default function AdminPage() {
                         key={tab.key}
                         onClick={() => setActiveTab(tab.key)}
                         className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${activeTab === tab.key
-                                ? "bg-white text-gray-900 shadow-sm dark:bg-surface-dark dark:text-white"
-                                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                            ? "bg-white text-gray-900 shadow-sm dark:bg-surface-dark dark:text-white"
+                            : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
                             }`}
                     >
                         {tab.label}
@@ -274,6 +395,78 @@ export default function AdminPage() {
                     </button>
                 ))}
             </div>
+
+            {/* ─── Users Tab ────────────────────────────────────────────── */}
+            {activeTab === "users" && (
+                <div className="card overflow-hidden p-0">
+                    <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-700 flex justify-between items-center">
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                            Active & Recent Users
+                        </h2>
+                        <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-950 dark:text-green-300">
+                            {activeUserCount} Online Now
+                        </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-surface-darker">
+                                <tr>
+                                    <th className="px-5 py-3 font-medium text-gray-500 dark:text-gray-400">Status</th>
+                                    <th className="px-5 py-3 font-medium text-gray-500 dark:text-gray-400">Name</th>
+                                    <th className="px-5 py-3 font-medium text-gray-500 dark:text-gray-400">User ID</th>
+                                    <th className="px-5 py-3 font-medium text-gray-500 dark:text-gray-400">Last Active</th>
+                                    <th className="px-5 py-3 font-medium text-gray-500 dark:text-gray-400">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                {users.map((user) => {
+                                    const lastActiveMillis = user.lastActiveAt instanceof Timestamp
+                                        ? user.lastActiveAt.toMillis()
+                                        : (user.lastActiveAt as any)?.seconds * 1000 || 0;
+                                    const isOnline = Date.now() - lastActiveMillis < 2 * 60 * 1000;
+
+                                    return (
+                                        <tr key={user.userId} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
+                                            <td className="px-5 py-3">
+                                                <span className={`inline-block h-2.5 w-2.5 rounded-full ${isOnline ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : "bg-red-400"}`} />
+                                            </td>
+                                            <td className="px-5 py-3 font-medium text-gray-900 dark:text-white">
+                                                {user.displayName || "—"}
+                                                {user.isAnonymous && <span className="ml-2 text-xs text-gray-400">(Anon)</span>}
+                                            </td>
+                                            <td className="px-5 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">
+                                                {user.userId}
+                                            </td>
+                                            <td className="px-5 py-3 text-gray-500 dark:text-gray-400">
+                                                {lastActiveMillis ? new Date(lastActiveMillis).toLocaleString("en-GB", {
+                                                    day: "numeric",
+                                                    month: "short",
+                                                    year: "2-digit",
+                                                    hour: "numeric",
+                                                    minute: "numeric",
+                                                    hour12: true
+                                                }) : "Never"}
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <button
+                                                    onClick={() => {
+                                                        setLookupInput(user.userId);
+                                                        setActiveTab("lookup");
+                                                        handleLookup();
+                                                    }}
+                                                    className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                                                >
+                                                    Manage
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {/* ─── Reports Tab ──────────────────────────────────────────── */}
             {activeTab === "reports" && (
@@ -318,10 +511,10 @@ export default function AdminPage() {
                                             <td className="px-5 py-3">
                                                 <span
                                                     className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${report.status === "pending"
-                                                            ? "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300"
-                                                            : report.status === "resolved"
-                                                                ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
-                                                                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                                                        ? "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300"
+                                                        : report.status === "resolved"
+                                                            ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                                                            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
                                                         }`}
                                                 >
                                                     {report.status}
@@ -507,16 +700,35 @@ export default function AdminPage() {
                                         Unban User
                                     </button>
                                 ) : (
-                                    <button
-                                        onClick={async () => {
-                                            await manualBanUser(lookupResult.userId);
-                                            setLookupResult({ ...lookupResult, isBlocked: true });
-                                            await loadData();
-                                        }}
-                                        className="rounded-lg bg-red-100 px-4 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 dark:bg-red-950 dark:text-red-400"
-                                    >
-                                        Ban User
-                                    </button>
+                                    <div className="flex flex-col gap-2">
+                                        <button
+                                            onClick={async () => {
+                                                const confirmed = window.confirm(
+                                                    "Are you sure you want to PERMANENTLY delete this user? This cannot be undone."
+                                                );
+                                                if (!confirmed) return;
+
+                                                await deleteUserProfile(lookupResult.userId);
+                                                setLookupResult(null);
+                                                setLookupInput("");
+                                                alert("User deleted.");
+                                                await loadData();
+                                            }}
+                                            className="rounded-lg bg-red-100 px-4 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 dark:bg-red-950 dark:text-red-400"
+                                        >
+                                            Delete User (Permanent)
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                await manualBanUser(lookupResult.userId);
+                                                setLookupResult({ ...lookupResult, isBlocked: true });
+                                                await loadData();
+                                            }}
+                                            className="rounded-lg bg-orange-100 px-4 py-2 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-400"
+                                        >
+                                            Ban User
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>

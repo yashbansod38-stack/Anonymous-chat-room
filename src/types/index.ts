@@ -74,6 +74,10 @@ export interface ChatDoc {
     lastMessageSenderId: string;
     /** Total number of messages in this chat */
     messageCount: number;
+    /** Map of userId to last typing timestamp */
+    typing?: Record<string, FirestoreTimestamp | { seconds: number; nanoseconds: number }>;
+    /** Map of userId to last read timestamp */
+    lastRead?: Record<string, FirestoreTimestamp | { seconds: number; nanoseconds: number }>;
 }
 
 // ─── /chats/{chatId}/messages/{messageId} ──────────────────────────

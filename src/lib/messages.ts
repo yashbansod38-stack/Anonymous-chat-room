@@ -4,14 +4,13 @@
 import {
     collection,
     doc,
-    addDoc,
-    updateDoc,
     onSnapshot,
     query,
     orderBy,
     limit,
     increment,
     serverTimestamp,
+    writeBatch,
     type Unsubscribe,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
@@ -32,31 +31,37 @@ export async function sendMessage(
     content: string
 ): Promise<string> {
     const db = requireDb();
+    const batch = writeBatch(db);
 
-    // Add message to subcollection
-    const msgRef = await addDoc(
-        collection(db, COLLECTIONS.CHATS, chatId, COLLECTIONS.MESSAGES),
-        {
-            senderId,
-            receiverId,
-            content,
-            createdAt: serverTimestamp(),
-            moderationStatus: "pending",
-            toxicityScore: 0,
-            isDeleted: false,
-            editedAt: null,
-        }
-    );
+    // 1. Create message ref
+    const messagesRef = collection(db, COLLECTIONS.CHATS, chatId, COLLECTIONS.MESSAGES);
+    const newMessageRef = doc(messagesRef);
 
-    // Update the parent chat document
-    await updateDoc(doc(db, COLLECTIONS.CHATS, chatId), {
+    // 2. Add message to batch
+    batch.set(newMessageRef, {
+        senderId,
+        receiverId,
+        content,
+        createdAt: serverTimestamp(),
+        moderationStatus: "pending",
+        toxicityScore: 0,
+        isDeleted: false,
+        editedAt: null,
+    });
+
+    // 3. Update chat metadata to batch
+    const chatRef = doc(db, COLLECTIONS.CHATS, chatId);
+    batch.update(chatRef, {
         lastMessagePreview: content.slice(0, 100),
         lastMessageSenderId: senderId,
         lastMessageAt: serverTimestamp(),
         messageCount: increment(1),
     });
 
-    return msgRef.id;
+    // 4. Commit batch
+    await batch.commit();
+
+    return newMessageRef.id;
 }
 
 // ─── Subscribe to Messages ────────────────────────────────────────

@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import ThemeToggle from "@/components/ui/ThemeToggle";
+import Avatar from "@/components/ui/Avatar";
 import { useAuth } from "@/context/AuthContext";
 import { APP_NAME } from "@/config/constants";
 
 export default function Header() {
-    const { uid, loading, isAuthenticated } = useAuth();
+    const { uid, loading, isAuthenticated, displayName, user } = useAuth();
+    console.log("[Header Debug] Render:", { uid, displayName, user });
 
     return (
         <header className="sticky top-0 z-50 w-full border-b border-gray-200/60 bg-white/80 backdrop-blur-xl dark:border-gray-800/60 dark:bg-surface-darker/80">
@@ -56,25 +58,31 @@ export default function Header() {
                     >
                         About
                     </Link>
-                    <Link
-                        href="/admin"
-                        className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-                    >
-                        Admin
-                    </Link>
+
                 </nav>
 
                 {/* Actions */}
                 <div className="flex items-center gap-3">
-                    {/* Auth status indicator */}
+                    {/* Auth status indicator / User Profile */}
                     {loading ? (
                         <div className="h-2 w-2 animate-pulse rounded-full bg-yellow-400" />
                     ) : isAuthenticated ? (
-                        <div className="flex items-center gap-2">
-                            <div className="h-2 w-2 rounded-full bg-green-400 shadow-sm shadow-green-400/50" />
-                            <span className="hidden text-xs font-mono text-gray-500 dark:text-gray-400 sm:inline">
-                                {uid?.slice(0, 8)}…
-                            </span>
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={() => document.dispatchEvent(new CustomEvent("open-profile-settings"))}
+                                className="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                            >
+                                Edit Profile
+                            </button>
+                            <div className="text-right hidden sm:block">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                    {displayName}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    {user?.uid.slice(0, 6)}...
+                                </p>
+                            </div>
+                            <Avatar seed={user?.uid || "user"} size={40} />
                         </div>
                     ) : (
                         <div className="h-2 w-2 rounded-full bg-red-400" />
