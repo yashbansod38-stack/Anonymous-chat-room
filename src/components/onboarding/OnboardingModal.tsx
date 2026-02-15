@@ -2,18 +2,20 @@
 "use client";
 
 import { useState } from "react";
-import { validateUsername, isUsernameTaken, createUserProfile } from "@/lib/userProfile";
+import { validateUsername, isUsernameTaken } from "@/lib/userProfile";
+import { useAuth } from "@/context/AuthContext"; // Import useAuth
 import Button from "@/components/ui/Button";
 
 interface OnboardingModalProps {
     isOpen: boolean;
     onClose: () => void;
-    userId: string;
     onComplete: (displayName: string) => void;
 }
 
-export default function OnboardingModal({ isOpen, onClose, userId, onComplete }: OnboardingModalProps) {
+export default function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModalProps) {
+    const { upgradeAccount } = useAuth(); // Use upgradeAccount from context
     const [username, setUsername] = useState("");
+    const [password, setPassword] = useState(""); // Add password state
     const [error, setError] = useState<string | null>(null);
     const [checking, setChecking] = useState(false);
 
@@ -29,6 +31,11 @@ export default function OnboardingModal({ isOpen, onClose, userId, onComplete }:
             return;
         }
 
+        if (password.length < 6) {
+            setError("Password must be at least 6 characters");
+            return;
+        }
+
         setChecking(true);
         try {
             // Check uniqueness
@@ -39,12 +46,18 @@ export default function OnboardingModal({ isOpen, onClose, userId, onComplete }:
                 return;
             }
 
-            // Create profile
-            await createUserProfile(userId, username.trim());
+            // Upgrade account (Link creds + Create Profile)
+            await upgradeAccount(username.trim(), password);
             onComplete(username.trim());
-        } catch (err) {
+        } catch (err: unknown) {
             console.error("Onboarding failed:", err);
-            setError("Something went wrong. Please try again.");
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const e = err as any;
+            if (e.code === "auth/email-already-in-use" || e.code === "auth/credential-already-in-use") {
+                setError("Username already taken (credential exists).");
+            } else {
+                setError("Something went wrong. Please try again.");
+            }
         } finally {
             setChecking(false);
         }
@@ -62,47 +75,64 @@ export default function OnboardingModal({ isOpen, onClose, userId, onComplete }:
                             </svg>
                         </div>
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                            Pick a Username
+                            Create Identity
                         </h2>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            Choose a unique name to start chatting.
+                            Set a username and password to secure your chat history.
                         </p>
                     </div>
 
-                    {/* Input */}
-                    <div className="mb-6">
-                        <label
-                            htmlFor="username-modal"
-                            className="mb-2 block text-sm font-semibold text-gray-700 dark:text-gray-300"
-                        >
-                            Username
-                        </label>
-                        <input
-                            id="username-modal"
-                            type="text"
-                            value={username}
-                            onChange={(e) => {
-                                setUsername(e.target.value);
-                                setError(null);
-                            }}
-                            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-                            placeholder="e.g. shadow_ninja"
-                            maxLength={16}
-                            autoFocus
-                            className="mb-1 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-base font-medium text-gray-800 placeholder-gray-400 outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-400/20 dark:border-gray-700 dark:bg-surface-darker dark:text-gray-200 dark:placeholder-gray-500"
-                        />
-                        <div className="flex items-center justify-between">
-                            <p className="text-xs text-gray-400 dark:text-gray-500">
-                                Letters, numbers, underscores only
-                            </p>
-                            <span
-                                className={`text-xs font-mono ${username.length > 16 || username.length < 3
-                                    ? "text-red-400"
-                                    : "text-gray-400"
-                                    }`}
+                    {/* Inputs */}
+                    <div className="mb-6 space-y-4">
+                        <div>
+                            <label
+                                htmlFor="username-modal"
+                                className="mb-2 block text-sm font-semibold text-gray-700 dark:text-gray-300"
                             >
-                                {username.length}/16
-                            </span>
+                                Username
+                            </label>
+                            <input
+                                id="username-modal"
+                                type="text"
+                                value={username}
+                                onChange={(e) => {
+                                    setUsername(e.target.value);
+                                    setError(null);
+                                }}
+                                placeholder="e.g. shadow_ninja"
+                                maxLength={16}
+                                autoFocus
+                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-base font-medium text-gray-800 placeholder-gray-400 outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-400/20 dark:border-gray-700 dark:bg-surface-darker dark:text-gray-200 dark:placeholder-gray-500"
+                            />
+                            <div className="mt-1 flex items-center justify-between">
+                                <p className="text-xs text-gray-400 dark:text-gray-500">
+                                    Letters, numbers, underscores only
+                                </p>
+                                <span className={`text-xs font-mono ${username.length > 16 || username.length < 3 ? "text-red-400" : "text-gray-400"}`}>
+                                    {username.length}/16
+                                </span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label
+                                htmlFor="password-modal"
+                                className="mb-2 block text-sm font-semibold text-gray-700 dark:text-gray-300"
+                            >
+                                Password
+                            </label>
+                            <input
+                                id="password-modal"
+                                type="password"
+                                value={password}
+                                onChange={(e) => {
+                                    setPassword(e.target.value);
+                                    setError(null);
+                                }}
+                                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                                placeholder="Min 6 chars"
+                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-base font-medium text-gray-800 placeholder-gray-400 outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-400/20 dark:border-gray-700 dark:bg-surface-darker dark:text-gray-200 dark:placeholder-gray-500"
+                            />
                         </div>
                     </div>
 
@@ -117,12 +147,12 @@ export default function OnboardingModal({ isOpen, onClose, userId, onComplete }:
                     <div className="flex flex-col gap-2">
                         <Button
                             onClick={handleSubmit}
-                            disabled={!username.trim() || checking}
+                            disabled={!username.trim() || !password || checking}
                             isLoading={checking}
                             className="w-full"
                             size="lg"
                         >
-                            {checking ? "Checking..." : "Continue"}
+                            {checking ? "Securing..." : "Continue"}
                         </Button>
                         <button
                             onClick={onClose}
@@ -131,10 +161,6 @@ export default function OnboardingModal({ isOpen, onClose, userId, onComplete }:
                             Cancel
                         </button>
                     </div>
-
-                    <p className="mt-4 text-center text-xs text-gray-400 dark:text-gray-600">
-                        Your identity stays anonymous.
-                    </p>
                 </div>
             </div>
         </div>

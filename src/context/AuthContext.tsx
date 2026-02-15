@@ -39,10 +39,12 @@ interface AuthContextType {
     setDisplayName: (name: string) => void;
     /** Re-check profile from Firestore */
     refreshProfile: () => Promise<void>;
-    /** Login with Email/Password */
-    login: (e: string, p: string) => Promise<void>;
-    /** Upgrade anonymous account to Email/Password */
-    upgradeAccount: (e: string, p: string) => Promise<void>;
+    /** Login with Username/Password */
+    login: (u: string, p: string) => Promise<void>;
+    /** Register new account with Username/Password */
+    register: (u: string, p: string) => Promise<void>;
+    /** Upgrade anonymous account to Username/Password */
+    upgradeAccount: (u: string, p: string) => Promise<void>;
     /** Logout (will auto-sign in anonymously after) */
     logout: () => Promise<void>;
 }
@@ -58,6 +60,7 @@ const AuthContext = createContext<AuthContextType>({
     setDisplayName: () => { },
     refreshProfile: async () => { },
     login: async () => { },
+    register: async () => { },
     upgradeAccount: async () => { },
     logout: async () => { },
 });
@@ -143,23 +146,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setHasProfile(true);
     }, []);
 
-    const login = useCallback(async (email: string, pass: string) => {
+    const login = useCallback(async (username: string, pass: string) => {
         const auth = getFirebaseAuth();
         if (!auth) throw new Error("Firebase not initialized");
+        const email = `${username.toLowerCase()}@safe-anon-chat.com`;
         await signInWithEmailAndPassword(auth, email, pass);
     }, []);
 
-    const upgradeAccount = useCallback(async (email: string, pass: string) => {
+    const register = useCallback(async (username: string, pass: string) => {
+        const auth = getFirebaseAuth();
+        if (!auth) throw new Error("Firebase not initialized");
+
+        // 1. Check if username is taken (handled by UI usually, but good to be safe)
+        // We rely on the UI to call isUsernameTaken first, or catch the email-already-in-use error.
+
+        const email = `${username.toLowerCase()}@safe-anon-chat.com`;
+
+        // 2. Create Auth User
+        const { createUserWithEmailAndPassword } = await import("firebase/auth");
+        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+        const user = userCredential.user;
+
+        // 3. Create Profile
+        const { createUserProfile } = await import("@/lib/userProfile");
+        await createUserProfile(user.uid, username, false); // isAnonymous = false
+
+        // 4. Set local display name immediately
+        setDisplayName(username);
+        setHasProfile(true);
+    }, []);
+
+    const upgradeAccount = useCallback(async (username: string, pass: string) => {
         const auth = getFirebaseAuth();
         if (!auth || !auth.currentUser) throw new Error("No user to upgrade");
 
+        const email = `${username.toLowerCase()}@safe-anon-chat.com`;
         try {
             const credential = EmailAuthProvider.credential(email, pass);
             await linkWithCredential(auth.currentUser, credential);
+
+            const { createUserProfile } = await import("@/lib/userProfile");
+            // Create user profile (isAnonymous: false)
+            await createUserProfile(auth.currentUser.uid, username, false);
+
+            // Set local state
+            setDisplayName(username);
+            setHasProfile(true);
         } catch (error: unknown) {
-            // If email already exists, we might want to just sign in?
-            // But linking fails if the credential exists. 
-            // For now, let the UI handle the error (e.g. "Email already in use, please login")
             throw error;
         }
     }, []);
@@ -185,6 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setDisplayName: handleSetDisplayName,
         refreshProfile,
         login,
+        register,
         upgradeAccount,
         logout,
     };

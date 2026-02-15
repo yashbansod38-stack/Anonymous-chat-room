@@ -65,10 +65,8 @@ export async function fetchPlatformStats(): Promise<PlatformStats> {
     const counts = results.map(r => r.status === "fulfilled" ? r.value : 0);
     const errors = results.filter(r => r.status === "rejected");
     if (errors.length > 0) {
-        console.error("[Admin] Some stats failed to load", errors);
-        // We could throw an error here to alert the UI, or return partial data
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        throw new Error("Partial stats failure: " + errors.map((e: any) => e.reason.message).join(", "));
+        console.warn("[Admin] Some stats failed to load", errors);
+        // Continue with partial data (0 for failed stats)
     }
 
     return {

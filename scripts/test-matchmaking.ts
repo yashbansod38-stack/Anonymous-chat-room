@@ -115,66 +115,67 @@ async function findMatch(db: Firestore, myUserId: string, myQueueDocId: string) 
 
 // --- Main Test ---
 async function runTest() {
-    console.log("Starting matchmaking test...");
+    console.log("Starting scaled matchmaking test (8 users)...");
 
-    // Initialize two separate apps to simulate two clients
-    const app1 = initializeApp(firebaseConfig, "UserA");
-    const app2 = initializeApp(firebaseConfig, "UserB");
-
-    const auth1 = getAuth(app1);
-    const auth2 = getAuth(app2);
-
-    const db1 = getFirestore(app1);
-    const db2 = getFirestore(app2);
+    const NUM_USERS = 8;
+    const apps: FirebaseApp[] = [];
 
     try {
-        // Authenticate
-        console.log("Authenticating users...");
-        const cred1 = await signInAnonymously(auth1);
-        const cred2 = await signInAnonymously(auth2);
+        const promises = [];
 
-        const uid1 = cred1.user.uid;
-        const uid2 = cred2.user.uid;
+        for (let i = 0; i < NUM_USERS; i++) {
+            promises.push((async () => {
+                const appName = `User_${i}`;
+                const app = initializeApp(firebaseConfig, appName);
+                apps.push(app);
 
-        console.log(`User A: ${uid1}`);
-        console.log(`User B: ${uid2}`);
+                const auth = getAuth(app);
+                const db = getFirestore(app);
 
-        // Create Profiles (Onboarding)
-        await createUserProfile(db1, uid1, "TestUserA");
-        await createUserProfile(db2, uid2, "TestUserB");
+                // Auth
+                const cred = await signInAnonymously(auth);
+                const uid = cred.user.uid;
+                const name = `Bot_${i}_${Math.random().toString(36).substring(7)}`;
 
-        // User A joins the queue
-        const qDoc1 = await joinQueue(db1, uid1);
+                // Profile
+                await createUserProfile(db, uid, name);
 
-        // Wait a bit
-        await new Promise(r => setTimeout(r, 1000));
+                // Join Queue
+                console.log(`[${name}] Joining queue...`);
+                const qDoc = await joinQueue(db, uid);
 
-        // User B joins the queue
-        const qDoc2 = await joinQueue(db2, uid2);
+                // Wait randomly to simulate real traffic
+                await new Promise(r => setTimeout(r, Math.random() * 2000));
 
-        // Simulating the Client B finding a match (since B joined last and sees A waiting)
-        console.log("User B looking for match...");
-        let chatId = await findMatch(db2, uid2, qDoc2);
+                // Find Match
+                console.log(`[${name}] Looking for match...`);
+                let attempts = 0;
+                let chatId = null;
 
-        if (chatId) {
-            console.log(`✅ MATCH FOUND! Chat ID: ${chatId}`);
-        } else {
-            console.log("❌ No match found immediately for User B. Trying User A...");
-            // Maybe A finds B if timing was different
-            chatId = await findMatch(db1, uid1, qDoc1);
-            if (chatId) console.log(`✅ MATCH FOUND! Chat ID: ${chatId}`);
+                while (attempts < 5 && !chatId) {
+                    chatId = await findMatch(db, uid, qDoc);
+                    if (chatId) break;
+                    await new Promise(r => setTimeout(r, 1000));
+                    attempts++;
+                }
+
+                if (chatId) {
+                    console.log(`✅ [${name}] Matched in Chat: ${chatId}`);
+                } else {
+                    console.log(`⚠️ [${name}] No match found after attempts.`);
+                }
+            })());
         }
 
-        if (!chatId) {
-            console.error("FAILED to simulate a match.");
-        }
+        await Promise.all(promises);
+        console.log("Test run complete.");
 
     } catch (error) {
         console.error("Test Failed:", error);
     } finally {
-        await deleteApp(app1);
-        await deleteApp(app2);
-        // Force exit because Firestore listeners might hang
+        for (const app of apps) {
+            await deleteApp(app);
+        }
         process.exit(0);
     }
 }

@@ -790,7 +790,6 @@ export default function ChatPage() {
                         <OnboardingModal
                             isOpen={onboardingOpen}
                             onClose={() => setOnboardingOpen(false)}
-                            userId={uid}
                             onComplete={handleOnboardingComplete}
                         />
                     )}

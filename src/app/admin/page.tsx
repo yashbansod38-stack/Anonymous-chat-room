@@ -128,7 +128,7 @@ export default function AdminPage() {
                             ? user.lastActiveAt.toMillis()
                             : (user.lastActiveAt as any).seconds * 1000;
                         return lastActiveMillis > twoMinsAgo;
-                    } catch (e) {
+                    } catch {
                         return false;
                     }
                 }).length;

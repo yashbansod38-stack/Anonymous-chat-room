@@ -43,17 +43,32 @@ export async function createUserProfile(
     isAnonymous: boolean = true
 ): Promise<void> {
     const db = requireDb();
-    await setDoc(doc(db, COLLECTIONS.USERS, userId), {
-        userId,
-        displayName,
-        displayNameLower: displayName.toLowerCase(),
-        isAnonymous,
-        isBlocked: false,
-        violationCount: 0,
-        blockedUsers: [],
-        createdAt: serverTimestamp(),
-        lastActiveAt: serverTimestamp(),
-    });
+    const userRef = doc(db, COLLECTIONS.USERS, userId);
+
+    const snap = await getDoc(userRef);
+
+    if (snap.exists()) {
+        // Update existing profile (preserve violationCount, isBlocked, createdAt)
+        await updateDoc(userRef, {
+            displayName,
+            displayNameLower: displayName.toLowerCase(),
+            isAnonymous,
+            lastActiveAt: serverTimestamp(),
+        });
+    } else {
+        // Create new profile
+        await setDoc(userRef, {
+            userId,
+            displayName,
+            displayNameLower: displayName.toLowerCase(),
+            isAnonymous,
+            isBlocked: false,
+            violationCount: 0,
+            blockedUsers: [],
+            createdAt: serverTimestamp(),
+            lastActiveAt: serverTimestamp(),
+        });
+    }
 }
 
 /**
