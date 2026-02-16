@@ -153,16 +153,24 @@ export default function ChatPage() {
             matchListenerRef.current = unsub;
         } catch (error) {
             console.error("Failed to join queue:", error);
+            alert("Failed to join matchmaking queue. Please check your connection.");
             setChatState("idle");
         }
     }, [uid, recentMatches]);
 
     const handleStartChat = useCallback(() => {
-        if (!uid) return;
+        console.log("[ChatPage] Handle Start Chat Clicked");
+        if (!uid) {
+            console.error("[ChatPage] Start Chat failed: No User ID");
+            alert("Authentication failed. Please refresh the page.");
+            return;
+        }
         if (!hasProfile) {
+            console.log("[ChatPage] Opening Onboarding");
             setOnboardingOpen(true);
             return;
         }
+        console.log("[ChatPage] Starting Matchmaking...");
         startMatchmaking();
     }, [uid, hasProfile, startMatchmaking]);
 
@@ -432,6 +440,26 @@ export default function ChatPage() {
         );
     }
 
+    // Auth Failed State
+    if (!uid && !authLoading) {
+        return (
+            <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+                <div className="mx-auto max-w-3xl">
+                    <div className="card flex min-h-[50vh] flex-col items-center justify-center text-center">
+                        <div className="text-red-500 mb-4">
+                            <svg className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Connection Failed</h2>
+                        <p className="text-gray-500 mb-6">Could not connect to the authentication server.</p>
+                        <Button onClick={() => window.location.reload()}>Retry Connection</Button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
 
 
     return (
@@ -455,8 +483,9 @@ export default function ChatPage() {
                         <Button variant="secondary" fullWidth onClick={() => {
                             setChatId(null);
                             setPartnerId(null);
-                            setChatState("idle");
                             setShowConnectedChats(false);
+                            // Trigger start chat directly
+                            handleStartChat();
                         }}>
                             Start Random Match
                         </Button>
