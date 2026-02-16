@@ -138,12 +138,51 @@ async function findMatch(
         // Skip self
         if (data.userId === userId) continue;
 
+        // ─── Ghost Check (Stale Requests) ───
+        // Check if the user is actually online (active in last 2 minutes)
+        const userRef = doc(db, COLLECTIONS.USERS, data.userId);
+        const userSnap = await getDoc(userRef);
+
+        if (!userSnap.exists()) {
+            // User deleted? Remove queue entry.
+            await deleteDoc(doc(db, COLLECTIONS.MATCH_QUEUE, docSnap.id));
+            continue;
+        }
+
+        const userData = userSnap.data();
+        const lastActive = userData?.lastActiveAt;
+
+        let shouldSkip = false;
+        if (lastActive) {
+            const lastActiveMillis = typeof lastActive.toMillis === 'function'
+                ? lastActive.toMillis()
+                : (lastActive.seconds * 1000);
+
+            const timeSinceActive = Date.now() - lastActiveMillis;
+            // If inactive for > 2 minutes, they are a "ghost"
+            if (timeSinceActive > 2 * 60 * 1000) {
+                console.log(`[Matchmaking] Detected ghost user ${data.userId} (inactive ${Math.round(timeSinceActive / 1000)}s). Cleaning up.`);
+                // Clean up stale request
+                await deleteDoc(doc(db, COLLECTIONS.MATCH_QUEUE, docSnap.id));
+                shouldSkip = true;
+            }
+        } else {
+            // No activity data? Assume stale if queue entry is old (e.g. > 5 mins)
+            const createdAtMillis = typeof data.createdAt.toMillis === 'function' ? data.createdAt.toMillis() : Date.now();
+            if (Date.now() - createdAtMillis > 5 * 60 * 1000) {
+                await deleteDoc(doc(db, COLLECTIONS.MATCH_QUEUE, docSnap.id));
+                shouldSkip = true;
+            }
+        }
+
+        if (shouldSkip) continue;
+
         // Skip users we have blocked
         if (blockedUsers.includes(data.userId)) continue;
 
         // Check if user is blocked (system-wide ban)
-        const isBanned = await checkUserBlocked(data.userId);
-        if (isBanned) continue;
+        // Note: we can use userData from above to save a read!
+        if (userData?.isBlocked) continue;
 
         // Check if the other user has blocked us
         const { getBlockedUsers } = await import("@/lib/block");

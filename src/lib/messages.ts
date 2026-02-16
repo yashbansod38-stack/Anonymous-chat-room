@@ -37,11 +37,55 @@ export async function sendMessage(
     const messagesRef = collection(db, COLLECTIONS.CHATS, chatId, COLLECTIONS.MESSAGES);
     const newMessageRef = doc(messagesRef);
 
+    // 0. Client-Side Moderation (Pre-Encryption)
+    // We must check content before encrypting, otherwise server sees gibberish.
+    try {
+        const modRes = await fetch("/api/moderate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: content }),
+        });
+
+        if (modRes.ok) {
+            const modData = await modRes.json();
+            if (!modData.safe) {
+                // Reject the message immediately
+                throw new Error(`Message blocked: ${modData.category} (${modData.reason})`);
+            }
+        }
+    } catch (e: any) {
+        // If it's the block error, rethrow it
+        if (e.message?.startsWith("Message blocked")) throw e;
+        // Otherwise, fail open or log warning (we don't want to block users if API is down)
+        console.warn("[Message] Moderation check failed, allowing message:", e);
+    }
+
+    // E2EE Logic
+    let finalContent = content;
+    let type = "text";
+    let iv: string | undefined;
+
+    try {
+        const { getSharedKey, encryptMessage } = await import("@/lib/e2ee");
+        const sharedKey = await getSharedKey(receiverId);
+
+        if (sharedKey) {
+            const encrypted = await encryptMessage(content, sharedKey);
+            finalContent = encrypted.ciphertext;
+            iv = encrypted.iv;
+            type = "encrypted";
+        }
+    } catch (e) {
+        console.warn("[Message] Encryption failed, falling back to plaintext:", e);
+    }
+
     // 2. Add message to batch
     batch.set(newMessageRef, {
         senderId,
         receiverId,
-        content,
+        content: finalContent,
+        type,
+        iv: iv || null,
         createdAt: serverTimestamp(),
         moderationStatus: "pending",
         toxicityScore: 0,
@@ -60,6 +104,30 @@ export async function sendMessage(
 
     // 4. Commit batch
     await batch.commit();
+
+    // 5. Trigger Notification (Fire-and-forget)
+    try {
+        const auth = getFirebaseDb()?.app ? (await import("firebase/auth")).getAuth() : null;
+        if (auth?.currentUser) {
+            auth.currentUser.getIdToken().then(token => {
+                fetch("/api/notify", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        targetUserId: receiverId,
+                        title: "New Message",
+                        body: content.slice(0, 100) || "You received a message",
+                        // icon: userAvatarUrl // Future improvement
+                    })
+                }).catch(err => console.error("Notification trigger failed:", err));
+            });
+        }
+    } catch (e) {
+        console.error("Failed to trigger notification flow", e);
+    }
 
     return newMessageRef.id;
 }

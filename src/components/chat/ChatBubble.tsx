@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { MessageDoc } from "@/types";
 import { Timestamp } from "firebase/firestore";
 import Avatar from "@/components/ui/Avatar";
@@ -12,9 +12,36 @@ interface ChatBubbleProps {
 
 export default function ChatBubble({ message, isOwn, partnerLastRead, onReport }: ChatBubbleProps) {
     const [showMenu, setShowMenu] = useState(false);
+    const [decryptedText, setDecryptedText] = useState<string | null>(null);
+    const [isDecrypting, setIsDecrypting] = useState(false);
 
     const isSystem = message.senderId === "system";
     const date = message.createdAt instanceof Timestamp ? message.createdAt.toDate() : new Date();
+
+    // Decryption Effect
+    useEffect(() => {
+        if (message.type === "encrypted" && message.iv && !decryptedText) {
+            setIsDecrypting(true);
+            const otherId = isOwn ? message.receiverId : message.senderId;
+
+            import("@/lib/e2ee").then(async ({ getSharedKey, decryptMessage }) => {
+                try {
+                    const key = await getSharedKey(otherId);
+                    if (key) {
+                        const text = await decryptMessage(message.iv!, message.content, key);
+                        setDecryptedText(text);
+                    } else {
+                        setDecryptedText("[Missing Key - Cannot Decrypt]");
+                    }
+                } catch (e) {
+                    console.error("Decryption failed:", e);
+                    setDecryptedText("[Decryption Failed]");
+                } finally {
+                    setIsDecrypting(false);
+                }
+            });
+        }
+    }, [message, isOwn, decryptedText]);
 
     const isRead = isOwn && partnerLastRead && message.createdAt && (
         partnerLastRead.toMillis() >= message.createdAt.toMillis()
@@ -28,6 +55,14 @@ export default function ChatBubble({ message, isOwn, partnerLastRead, onReport }
         setShowMenu((prev) => !prev);
     };
 
+    // Display Content Logic
+    let displayContent = message.content;
+    if (message.type === "encrypted") {
+        if (isDecrypting) displayContent = "🔐 Decrypting...";
+        else if (decryptedText) displayContent = decryptedText;
+        else displayContent = "🔒 Encrypted Message";
+    }
+
     return (
         <div className={`flex w-full ${isOwn ? "justify-end" : "justify-start"} mb-4`}>
             {!isOwn && !isSystem && (
@@ -40,7 +75,7 @@ export default function ChatBubble({ message, isOwn, partnerLastRead, onReport }
                     }`}
                 onContextMenu={handleContextMenu}
             >
-                <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                <div className="whitespace-pre-wrap break-words">{displayContent}</div>
                 <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${isOwn ? "text-primary-100" : "text-gray-400"}`}>
                     <span>{time}</span>
                     {isOwn && (

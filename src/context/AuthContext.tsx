@@ -107,6 +107,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log("[AuthContext] Auth State Changed:", firebaseUser?.uid);
 
             if (firebaseUser) {
+                // Initialize E2EE Keys
+                import("@/lib/e2ee").then(({ initializeE2EE }) => {
+                    initializeE2EE(firebaseUser.uid).catch(e => console.error("E2EE Init Error:", e));
+                });
+
                 setUser(firebaseUser);
                 // Check if user has a profile
                 try {

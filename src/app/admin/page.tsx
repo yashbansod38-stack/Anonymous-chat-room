@@ -224,7 +224,7 @@ export default function AdminPage() {
         }
     }, [uid, authLoading, isAnonymous, router]);
 
-    const ADMIN_UIDS = process.env.NEXT_PUBLIC_ADMIN_UIDS?.split(",") || [];
+    const ADMIN_UIDS = (process.env.NEXT_PUBLIC_ADMIN_UIDS?.split(",") || []).map(id => id.trim());
     const isAdmin = uid && ADMIN_UIDS.includes(uid);
 
     if (!authLoading && !isAdmin) {

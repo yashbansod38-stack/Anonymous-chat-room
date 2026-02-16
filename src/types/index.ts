@@ -101,6 +101,10 @@ export interface MessageDoc {
     isDeleted: boolean;
     /** When the message was edited (null if never) */
     editedAt: FirestoreTimestamp | null;
+    /** Message type (default: text) */
+    type?: "text" | "encrypted";
+    /** Initialization Vector (if encrypted) */
+    iv?: string;
 }
 
 // ─── /reports/{reportId} ──────────────────────────────────────────

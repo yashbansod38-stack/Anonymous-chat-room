@@ -107,17 +107,16 @@ export function subscribeToConnections(
     callback: (connections: ConnectionDoc[]) => void
 ): Unsubscribe {
     const db = requireDb();
-    // Firestore doesn't support array-contains with compound queries easily,
-    // so we listen to all connections and filter client-side for now.
     const q = query(
         collection(db, COLLECTIONS.CONNECTIONS),
+        where("participants", "array-contains", userId),
         where("status", "==", "active")
     );
 
     return onSnapshot(q, (snapshot) => {
-        const connections = snapshot.docs
-            .map((d) => ({ id: d.id, ...d.data() }) as ConnectionDoc)
-            .filter((c) => c.participants.includes(userId));
+        const connections = snapshot.docs.map(
+            (d) => ({ id: d.id, ...d.data() }) as ConnectionDoc
+        );
         callback(connections);
     });
 }
