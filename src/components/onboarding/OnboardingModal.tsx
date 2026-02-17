@@ -55,7 +55,12 @@ export default function OnboardingModal({ isOpen, onClose, onComplete }: Onboard
             const e = err as any;
             if (e.code === "auth/email-already-in-use" || e.code === "auth/credential-already-in-use") {
                 setError("Username already taken (credential exists).");
+            } else if (e.code === "auth/provider-already-linked") {
+                // Should be handled by context now, but just in case
+                setError("Account already set up. Refreshing...");
+                window.location.reload();
             } else {
+                console.error("Onboarding Error:", e);
                 setError("Something went wrong. Please try again.");
             }
         } finally {

@@ -189,7 +189,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
             const credential = EmailAuthProvider.credential(email, pass);
             await linkWithCredential(auth.currentUser, credential);
+        } catch (error: any) {
+            if (error.code === 'auth/provider-already-linked') {
+                // User already has email/password linked. Proceed to profile update.
+                console.warn("[AuthContext] User already linked, proceeding to profile update.");
+            } else {
+                throw error;
+            }
+        }
 
+        try {
             const { createUserProfile } = await import("@/lib/userProfile");
             // Create user profile (isAnonymous: false)
             await createUserProfile(auth.currentUser.uid, username, false);
@@ -197,8 +206,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Set local state
             setDisplayName(username);
             setHasProfile(true);
-        } catch (error: unknown) {
-            throw error;
+        } catch (err) {
+            console.error("Profile creation failed:", err);
+            throw err;
         }
     }, []);
 
