@@ -31,7 +31,40 @@ export default function FriendChatSidebar() {
         return () => unsub();
     }, [uid]);
 
-    if (!uid || connections.length === 0) return null;
+    // State for open chat windows
+    const [openChatIds, setOpenChatIds] = useState<Set<string>>(new Set());
+
+    // Listen for "open-chat" event from other components
+    useEffect(() => {
+        const handleOpenChat = (e: CustomEvent<{ chatId: string }>) => {
+            const { chatId } = e.detail;
+            setOpenChatIds((prev) => {
+                const next = new Set(prev);
+                next.add(chatId);
+                return next;
+            });
+            // Auto-expand sidebar if it was collapsed
+            setIsCollapsed(false);
+        };
+
+        window.addEventListener("open-chat", handleOpenChat as EventListener);
+        return () => window.removeEventListener("open-chat", handleOpenChat as EventListener);
+    }, []);
+
+    const handleClose = (chatId: string) => {
+        setOpenChatIds((prev) => {
+            const next = new Set(prev);
+            next.delete(chatId);
+            return next;
+        });
+    };
+
+    if (!uid) return null;
+
+    // Filter connections to only show open ones
+    const activeConnections = connections.filter(c => openChatIds.has(c.chatId));
+
+    if (activeConnections.length === 0) return null;
 
     if (isCollapsed) {
         return (
@@ -44,16 +77,16 @@ export default function FriendChatSidebar() {
                 </svg>
                 {/* Badge for number of chats */}
                 <span className="absolute -right-1 -top-1 flex h-6 min-w-[24px] items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold ring-2 ring-white">
-                    {connections.length}
+                    {activeConnections.length}
                 </span>
             </button>
         );
     }
 
     return (
-        <div className="fixed bottom-0 right-4 z-40 flex flex-col-reverse items-end gap-2 sm:flex-row sm:items-end">
+        <div className="fixed bottom-0 right-4 z-40 flex flex-col-reverse items-end gap-2 sm:flex-row sm:items-end pointer-events-none">
             {/* Collapse Button */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 pointer-events-auto">
                 <button
                     onClick={() => setIsCollapsed(true)}
                     className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-dark/50 text-white backdrop-blur-md transition-colors hover:bg-surface-dark/80 dark:bg-gray-700/50 dark:hover:bg-gray-700/80 mb-2 sm:mb-0 shadow-sm"
@@ -65,12 +98,13 @@ export default function FriendChatSidebar() {
                 </button>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end overflow-x-auto max-w-[100vw] px-2 sm:overflow-visible sm:px-0 scrollbar-hide py-2 sm:py-0">
-                {connections.map((conn) => (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end overflow-x-auto max-w-[100vw] px-2 sm:overflow-visible sm:px-0 scrollbar-hide py-2 sm:py-0 pointer-events-auto">
+                {activeConnections.map((conn) => (
                     <FriendChatWindow
                         key={conn.id}
                         connection={conn}
                         currentUserId={uid}
+                        onClose={() => handleClose(conn.chatId)}
                     />
                 ))}
             </div>

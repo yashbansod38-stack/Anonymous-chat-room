@@ -104,18 +104,20 @@ export default function ChatPage() {
     }, [hasProfile, displayName, chatState, chatId]);
 
     // Select a chat from the connected list
-    const handleSelectChat = useCallback((selectedChatId: string, partnerId: string, partnerName: string) => {
-        if (chatState === "searching" && queueDocId) {
-            leaveMatchQueue(queueDocId).catch(console.error);
-            setQueueDocId(null);
-        }
-        setChatId(selectedChatId);
-        setPartnerId(partnerId);
-        setPartnerName(partnerName);
-        setChatState("matched");
-        setMessages([]); // Will load from Firestore
-        setShowConnectedChats(false);
-    }, [chatState, queueDocId]);
+    const handleSelectChat = useCallback((selectedChatId: string) => {
+        // Dispatch event to open floating window
+        window.dispatchEvent(new CustomEvent("open-chat", { detail: { chatId: selectedChatId } }));
+
+        // Optional: Also open in main view? 
+        // User requested "small specific to that user will open up".
+        // So we do NOT replace the main view content here.
+        // If we want both, uncomment below:
+        // setChatId(selectedChatId);
+        // setPartnerId(partnerId);
+        // setPartnerName(partnerName);
+        // setChatState("matched");
+        // setShowConnectedChats(false);
+    }, []);
 
     const startMatchmaking = useCallback(async () => {
         if (!uid) return;
